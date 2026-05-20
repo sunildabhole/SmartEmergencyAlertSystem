@@ -59,6 +59,7 @@ class AlertBase(BaseModel):
     emergency_type: str
     latitude: float
     longitude: float
+    accuracy: Optional[float] = None
 
     @field_validator('latitude')
     @classmethod
@@ -83,6 +84,7 @@ class AlertLocationUpdate(BaseModel):
     """Payload for periodic live-location ping from active user."""
     latitude: float
     longitude: float
+    accuracy: Optional[float] = None
 
     @field_validator('latitude')
     @classmethod
@@ -110,6 +112,8 @@ class AlertResponse(AlertBase):
     last_latitude: Optional[float] = None
     last_longitude: Optional[float] = None
     last_location_update: Optional[datetime] = None
+    last_accuracy: Optional[float] = None
+    is_moving: Optional[bool] = False
     created_at: datetime
 
     class Config:

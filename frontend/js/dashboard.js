@@ -50,6 +50,12 @@ async function fetchUserInfo() {
 async function sendSOS() {
     if (isSendingSOS) return;
 
+    // Check if the user already has an active emergency alert tracked locally
+    if (activeAlertId) {
+        showToast('You already have an active emergency.', 'warning');
+        return;
+    }
+
     const emergencyType = document.getElementById('emergencyType').value;
     const statusText    = document.getElementById('locationStatus');
 
@@ -90,7 +96,7 @@ async function sendSOS() {
     function acquirePosition() {
         navigator.geolocation.getCurrentPosition(
             async (position) => {
-                const { latitude, longitude } = position.coords;
+                const { latitude, longitude, accuracy } = position.coords;
 
                 // Client-side coordinates validation
                 if (!latitude || !longitude || latitude === 0 || longitude === 0 || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
@@ -99,8 +105,13 @@ async function sendSOS() {
                     return;
                 }
 
-                console.info("Location fetched successfully", { latitude, longitude });
+                console.info("Location fetched successfully", { latitude, longitude, accuracy });
                 lastPosition = position;
+
+                // Accuracy Warning (still allows SOS)
+                if (accuracy && accuracy > 100) {
+                    showToast('Low GPS accuracy detected. Move to an open area.', 'warning');
+                }
 
                 toggleLoader(true, 'Sending SOS Alert…');
                 statusText.innerHTML = '<i class="fa-solid fa-satellite-dish"></i> Transmitting signal…';
@@ -110,6 +121,7 @@ async function sendSOS() {
                         emergency_type: emergencyType,
                         latitude,
                         longitude,
+                        accuracy: accuracy || null
                     });
 
                     activeAlertId = alert.id;
@@ -124,7 +136,7 @@ async function sendSOS() {
                     fetchMyAlerts();
                 } catch (err) {
                     toggleLoader(false);
-                    showToast('Failed to send alert: ' + err.message, 'error');
+                    showToast(err.message || 'Failed to send alert', 'error');
                     statusText.innerHTML = '<i class="fa-solid fa-xmark" style="color:var(--danger)"></i> Failed to send';
                     resetSosButton();
                 } finally {
@@ -147,7 +159,7 @@ async function sendSOS() {
                 // Handle final failure after retry
                 handleFailure(error);
             },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 } // strict WhatsApp high accuracy options
         );
     }
 
@@ -159,10 +171,10 @@ async function sendSOS() {
                     userMessage = "Location access denied. Please allow GPS permission.";
                     break;
                 case error.POSITION_UNAVAILABLE:
-                    userMessage = "Unable to fetch your location. Please try again.";
+                    userMessage = "Unable to detect location.";
                     break;
                 case error.TIMEOUT:
-                    userMessage = "Location request timed out. Please try again.";
+                    userMessage = "Location request timed out.";
                     break;
             }
         } else if (error && error.message) {
@@ -193,21 +205,32 @@ async function sendSOS() {
 function startLiveTracking(alertId) {
     stopLiveTracking(); // clear any previous watch
 
-    // Continuously watch device position
+    // Continuously watch device position (WhatsApp style)
     watchId = navigator.geolocation.watchPosition(
-        (pos) => { lastPosition = pos; },
+        (pos) => { 
+            // Validate fresh position and log accuracy
+            if (pos.coords.accuracy > 100) {
+                console.warn(`Low GPS accuracy in live tracking: ${pos.coords.accuracy}m`);
+            }
+            lastPosition = pos; 
+        },
         (err) => console.warn('watchPosition error:', err.message),
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } // high accuracy, no cache
     );
 
     // Push location to server every LOCATION_UPDATE_INTERVAL ms
     locationTimer = setInterval(async () => {
         if (!lastPosition || !activeAlertId) return;
 
-        const { latitude, longitude } = lastPosition.coords;
+        const { latitude, longitude, accuracy } = lastPosition.coords;
         try {
-            await apiCall(`/alerts/${activeAlertId}/location`, 'PUT', { latitude, longitude });
-            updateLocationStatusDot(latitude, longitude);
+            // Using the professional PATCH /alerts/location/{id} endpoint
+            await apiCall(`/alerts/location/${activeAlertId}`, 'PATCH', { 
+                latitude, 
+                longitude,
+                accuracy: accuracy || null 
+            });
+            updateLocationStatusDot(latitude, longitude, accuracy);
         } catch (err) {
             // Non-fatal – alert may have been resolved on server
             if (err.message.includes('400') || err.message.includes('404')) {
@@ -230,15 +253,16 @@ function stopLiveTracking() {
     activeAlertId = null;
 }
 
-function updateLocationStatusDot(lat, lng) {
+function updateLocationStatusDot(lat, lng, accuracy) {
     const statusText = document.getElementById('locationStatus');
     if (!statusText) return;
     const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+    const accuracyStr = accuracy ? ` (±${Math.round(accuracy)}m)` : '';
     statusText.innerHTML =
         `<i class="fa-solid fa-location-crosshairs" style="color:var(--danger)"></i>` +
         ` <span style="color:var(--danger); font-weight:600;">Live tracking</span>` +
         ` – <a href="${mapsUrl}" target="_blank" style="font-size:0.8rem; color:var(--text-muted);">` +
-        `${lat.toFixed(5)}, ${lng.toFixed(5)}</a>`;
+        `${lat.toFixed(5)}, ${lng.toFixed(5)}</a>${accuracyStr}`;
 }
 
 // ── My Alerts ─────────────────────────────────────────────────────────────────
@@ -247,6 +271,34 @@ async function fetchMyAlerts() {
     try {
         const alerts = await apiCall('/alerts/my-alerts', 'GET');
         const list = document.getElementById('alertsList');
+
+        // Restore active alert tracking if found in the list on initial load or refresh
+        const activeAlert = alerts.find(a => a.status === 'Pending' || a.status === 'In Progress');
+        if (activeAlert) {
+            if (!activeAlertId) {
+                activeAlertId = activeAlert.id;
+                startLiveTracking(activeAlert.id);
+                const statusText = document.getElementById('locationStatus');
+                if (statusText) {
+                    const lat = activeAlert.last_latitude ?? activeAlert.latitude;
+                    const lng = activeAlert.last_longitude ?? activeAlert.longitude;
+                    const accuracy = activeAlert.last_accuracy ?? activeAlert.accuracy;
+                    updateLocationStatusDot(lat, lng, accuracy);
+                }
+            }
+            // Ensure the SOS button is disabled because there is already an active alert
+            document.getElementById('sosBtn').disabled = true;
+        } else {
+            // No active alert found, ensure button is active and activeAlertId is cleared
+            if (activeAlertId) {
+                stopLiveTracking();
+                const statusText = document.getElementById('locationStatus');
+                if (statusText) {
+                    statusText.innerHTML = '<i class="fa-solid fa-location-dot"></i> Ready to capture location';
+                }
+            }
+            document.getElementById('sosBtn').disabled = false;
+        }
 
         if (alerts.length === 0) {
             list.innerHTML = '<p class="text-muted" style="text-align:center; padding: 1rem;">No recent alerts.</p>';

@@ -52,10 +52,13 @@ class Alert(Base):
     emergency_type = Column(String(50), nullable=False)
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
+    accuracy = Column(Float, nullable=True)                        # NEW: accuracy of original SOS GPS in meters
     # NEW: live location tracking – updated periodically while alert is active
     last_latitude = Column(Float, nullable=True)
     last_longitude = Column(Float, nullable=True)
+    last_accuracy = Column(Float, nullable=True)                   # NEW: accuracy of latest live update in meters
     last_location_update = Column(DateTime(timezone=True), nullable=True)
+    is_moving = Column(Boolean, default=False)                     # NEW: whether citizen is currently moving
     status = Column(
         Enum(
             AlertStatus,
@@ -66,3 +69,4 @@ class Alert(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="alerts")
+

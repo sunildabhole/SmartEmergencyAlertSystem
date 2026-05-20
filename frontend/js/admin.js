@@ -143,16 +143,58 @@ async function fetchAdminAlerts() {
             const isLive = (alert.status === 'Pending' || alert.status === 'In Progress')
                            && alert.last_location_update;
 
+            // GPS Accuracy Badge
+            const rawAccuracy = alert.last_accuracy ?? alert.accuracy;
+            let accuracyBadge = '';
+            if (rawAccuracy !== null && rawAccuracy !== undefined) {
+                const isAccurate = rawAccuracy <= 100;
+                const accColor = isAccurate ? 'var(--success)' : 'var(--warning)';
+                accuracyBadge = `<span style="display:inline-block; padding: 2px 6px; font-size: 0.7rem; border-radius: 4px; background: rgba(0,0,0,0.05); color: ${accColor}; font-weight: 600; margin-top: 4px;">
+                    🎯 Accuracy: ${Math.round(rawAccuracy)}m ${isAccurate ? '' : '(Low GPS)'}
+                </span>`;
+            }
+
+            // Moving Status Badge
+            let movingBadge = '';
+            if (isLive) {
+                const isMoving = alert.is_moving;
+                movingBadge = `<span style="display:inline-block; padding: 2px 6px; font-size: 0.7rem; border-radius: 4px; background: ${isMoving ? 'rgba(40,167,69,0.1)' : 'rgba(108,117,125,0.1)'}; color: ${isMoving ? 'var(--success)' : 'var(--secondary)'}; font-weight: 600; margin-top: 4px; margin-left: 4px;">
+                    ${isMoving ? '🚶 Moving' : '📍 Stationary'}
+                </span>`;
+            }
+
+            // Seconds/Minutes Ago Calculation
+            let timeAgoText = '';
+            if (isLive && alert.last_location_update) {
+                const updateTime = new Date(alert.last_location_update);
+                const diffMs = new Date() - updateTime;
+                const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+                
+                if (diffSec < 5) {
+                    timeAgoText = 'Just now';
+                } else if (diffSec < 60) {
+                    timeAgoText = `${diffSec}s ago`;
+                } else {
+                    timeAgoText = `${Math.floor(diffSec / 60)}m ago`;
+                }
+            }
+
             const locationCell = `
-                <a href="${gmapsLink}" target="_blank" class="btn btn-outline btn-small">
-                    <i class="fa-solid fa-map-location-dot"></i>
-                    ${isLive ? '<span class="live-badge">LIVE</span>' : 'Map'}
-                </a>
-                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">
-                    ${lat.toFixed(5)}, ${lng.toFixed(5)}
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <a href="${gmapsLink}" target="_blank" class="btn btn-outline btn-small">
+                        <i class="fa-solid fa-map-location-dot"></i> Map
+                    </a>
+                    <button onclick="navigateToCitizen(${lat}, ${lng})" class="btn btn-primary btn-small" style="padding: 0.35rem 0.6rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid fa-diamond-turn-right"></i> Navigate
+                    </button>
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height: 1.4;">
+                    <strong>Coords:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}
                     ${isLive && alert.last_location_update
-                        ? `<br><i class="fa-solid fa-clock"></i> ${new Date(alert.last_location_update).toLocaleTimeString()}`
+                        ? `<br><span style="color: var(--danger); font-weight: 600;"><i class="fa-solid fa-circle-dot fa-fade"></i> Live tracking</span> (${timeAgoText})`
                         : ''}
+                    ${accuracyBadge ? '<br>' + accuracyBadge : ''}
+                    ${movingBadge ? '<br>' + movingBadge : ''}
                 </div>`;
 
             const statusClass = statusClassMap[alert.status] || 'status-pending';
@@ -232,5 +274,29 @@ async function updateAlertStatus(alertId, newStatus) {
         fetchAdminAlerts();
     } catch {
         showToast('Failed to update status', 'error');
+    }
+}
+
+// ── Navigate to Citizen (Google Maps Driving Route) ───────────────────────────
+
+function navigateToCitizen(lat, lng) {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const originLat = position.coords.latitude;
+                const originLng = position.coords.longitude;
+                const url = `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${lat},${lng}&travelmode=driving`;
+                window.open(url, '_blank');
+            },
+            (error) => {
+                console.warn("Could not retrieve responder GPS coordinates for navigation, using destination fallback:", error);
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+                window.open(url, '_blank');
+            },
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+        );
+    } else {
+        const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+        window.open(url, '_blank');
     }
 }
