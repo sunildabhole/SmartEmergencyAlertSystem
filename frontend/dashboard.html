@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - SEAS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard-body">
+    <div id="toast-container"></div>
+    <div id="loader-overlay" class="hidden">
+        <div class="spinner"></div>
+        <p>Getting location & sending alert...</p>
+    </div>
+
+    <nav class="navbar">
+        <div class="logo"><i class="fa-solid fa-shield-halved"></i> SEAS</div>
+        <div class="nav-user">
+            <span id="userName">User</span>
+            <button id="logoutBtn" class="btn btn-outline btn-small">Logout</button>
+        </div>
+    </nav>
+
+    <main class="dashboard-content">
+        <div class="sos-section glass-panel">
+            <h2>Send Emergency Alert</h2>
+            <p class="subtitle">Select emergency type and press SOS</p>
+            
+            <div class="emergency-type-selector">
+                <select id="emergencyType" class="modern-select">
+                    <option value="Medical Emergency">Medical Emergency</option>
+                    <option value="Accident">Accident</option>
+                    <option value="Fire">Fire</option>
+                    <option value="Police">Police/Security</option>
+                </select>
+            </div>
+
+            <div class="sos-button-container">
+                <button id="sosBtn" class="sos-btn">
+                    <div class="sos-text">SOS</div>
+                </button>
+            </div>
+            <p id="locationStatus" class="location-status"><i class="fa-solid fa-location-dot"></i> Ready to capture location</p>
+        </div>
+
+        <div class="recent-alerts glass-panel">
+            <h3>Your Recent Alerts</h3>
+            <div id="alertsList" class="alerts-list">
+                <!-- Alerts injected here by JS -->
+            </div>
+        </div>
+    </main>
+
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

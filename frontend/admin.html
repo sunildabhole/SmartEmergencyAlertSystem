@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - SEAS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard-body admin-body">
+    <div id="toast-container"></div>
+    <nav class="navbar admin-nav">
+        <div class="logo"><i class="fa-solid fa-user-shield"></i> Admin Control</div>
+        <div class="nav-user">
+            <span id="clock" class="realtime-clock">00:00:00</span>
+            <button id="logoutBtn" class="btn btn-outline btn-small">Logout</button>
+        </div>
+    </nav>
+
+    <main class="admin-content">
+        <div class="stats-container">
+            <div class="stat-card pending-stat">
+                <h3>Pending</h3>
+                <h2 id="statPending">0</h2>
+            </div>
+            <div class="stat-card progress-stat">
+                <h3>In Progress</h3>
+                <h2 id="statProgress">0</h2>
+            </div>
+            <div class="stat-card resolved-stat">
+                <h3>Resolved</h3>
+                <h2 id="statResolved">0</h2>
+            </div>
+        </div>
+
+        <div class="admin-panel glass-panel">
+            <div class="panel-header">
+                <h2>Emergency Alerts Live Feed</h2>
+                <span class="live-indicator"><span class="dot"></span> Live updating (5s)</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="modern-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Time</th>
+                            <th>User Info</th>
+                            <th>Emergency Type</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminAlertsList">
+                        <!-- Admin alerts injected here by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>

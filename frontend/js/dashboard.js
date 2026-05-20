@@ -1,0 +1,343 @@
+/**
+ * dashboard.js – user dashboard with live location tracking.
+ *
+ * After an SOS alert is created, the browser watches the device position
+ * (watchPosition) and PUTs updates to /alerts/{id}/location every
+ * LOCATION_UPDATE_INTERVAL ms while the alert is active.
+ *
+ * Tracking stops automatically when the user cancels the alert or when
+ * the alert status changes to Resolved / Cancelled / False Alarm.
+ */
+
+const LOCATION_UPDATE_INTERVAL = 10_000; // 10 seconds
+
+let activeAlertId  = null;   // currently tracked alert ID
+let watchId        = null;   // navigator.geolocation.watchPosition handle
+let locationTimer  = null;   // setInterval handle for location PUTs
+let lastPosition   = null;   // most recent GeolocationPosition
+let isSendingSOS   = false;  // Protect against duplicate SOS triggers
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    checkAuth(false);
+    fetchUserInfo();
+    fetchMyAlerts();
+
+    document.getElementById('logoutBtn').addEventListener('click', stopTrackingAndLogout);
+    document.getElementById('sosBtn').addEventListener('click', sendSOS);
+});
+
+// ── Logout ────────────────────────────────────────────────────────────────────
+
+function stopTrackingAndLogout() {
+    stopLiveTracking();
+    logout();
+}
+
+// ── User info ─────────────────────────────────────────────────────────────────
+
+async function fetchUserInfo() {
+    try {
+        const user = await apiCall('/auth/me', 'GET');
+        document.getElementById('userName').innerText = `Hello, ${user.name}`;
+    } catch {
+        showToast('Failed to fetch user info', 'error');
+    }
+}
+
+// ── SOS ───────────────────────────────────────────────────────────────────────
+
+async function sendSOS() {
+    if (isSendingSOS) return;
+
+    const emergencyType = document.getElementById('emergencyType').value;
+    const statusText    = document.getElementById('locationStatus');
+
+    if (!navigator.geolocation) {
+        showToast('Your browser does not support location tracking.', 'error');
+        return;
+    }
+
+    // HTTPS / Secure Context Validation
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isSecure = window.location.protocol === 'https:' || isLocalhost;
+    if (!isSecure) {
+        showToast('Browser blocks location access on insecure HTTP connections. Please use HTTPS or localhost.', 'error');
+        console.warn('Geolocation blocked: Insecure context detected.');
+        return;
+    }
+
+    isSendingSOS = true;
+
+    // Disable button and adapt styles
+    const sosBtn = document.getElementById('sosBtn');
+    sosBtn.disabled = true;
+
+    const sosText = sosBtn.querySelector('.sos-text');
+    const originalText = sosText ? sosText.textContent : 'SOS';
+    const originalFontSize = sosText ? sosText.style.fontSize : '';
+
+    if (sosText) {
+        sosText.textContent = "Getting Location...";
+        sosText.style.fontSize = "1.1rem"; // scale down to fit inside the circular button beautifully
+    }
+
+    toggleLoader(true, 'Getting precise location…');
+    statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Acquiring GPS…';
+
+    let retryAttempted = false;
+
+    function acquirePosition() {
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                const { latitude, longitude } = position.coords;
+
+                // Client-side coordinates validation
+                if (!latitude || !longitude || latitude === 0 || longitude === 0 || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+                    console.error("Invalid coordinates fetched:", latitude, longitude);
+                    handleFailure({ code: 0, message: "Invalid coordinates received." });
+                    return;
+                }
+
+                console.info("Location fetched successfully", { latitude, longitude });
+                lastPosition = position;
+
+                toggleLoader(true, 'Sending SOS Alert…');
+                statusText.innerHTML = '<i class="fa-solid fa-satellite-dish"></i> Transmitting signal…';
+
+                try {
+                    const alert = await apiCall('/alerts/', 'POST', {
+                        emergency_type: emergencyType,
+                        latitude,
+                        longitude,
+                    });
+
+                    activeAlertId = alert.id;
+                    toggleLoader(false);
+                    showToast('EMERGENCY ALERT SENT SUCCESSFULLY!', 'success');
+                    statusText.innerHTML =
+                        '<i class="fa-solid fa-location-crosshairs" style="color:var(--danger)"></i>' +
+                        ' <span style="color:var(--danger); font-weight:600;">Live tracking active</span>';
+
+                    // Begin live-location streaming
+                    startLiveTracking(alert.id);
+                    fetchMyAlerts();
+                } catch (err) {
+                    toggleLoader(false);
+                    showToast('Failed to send alert: ' + err.message, 'error');
+                    statusText.innerHTML = '<i class="fa-solid fa-xmark" style="color:var(--danger)"></i> Failed to send';
+                    resetSosButton();
+                } finally {
+                    isSendingSOS = false;
+                }
+            },
+            (error) => {
+                console.warn(`Geolocation attempt failed (retry attempted: ${retryAttempted}):`, error);
+
+                // Attempt one automatic retry if not tried yet
+                if (!retryAttempted) {
+                    retryAttempted = true;
+                    console.info("Attempting automatic retry to warm up GPS...");
+                    toggleLoader(true, 'Retrying location capture…');
+                    statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Retrying GPS capture…';
+                    acquirePosition();
+                    return;
+                }
+
+                // Handle final failure after retry
+                handleFailure(error);
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+    }
+
+    function handleFailure(error) {
+        let userMessage = "Could not detect location.";
+        if (error && error.code) {
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    userMessage = "Location access denied. Please allow GPS permission.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    userMessage = "Unable to fetch your location. Please try again.";
+                    break;
+                case error.TIMEOUT:
+                    userMessage = "Location request timed out. Please try again.";
+                    break;
+            }
+        } else if (error && error.message) {
+            userMessage = error.message;
+        }
+
+        toggleLoader(false);
+        showToast(userMessage, 'error');
+        statusText.innerHTML = `<i class="fa-solid fa-location-xmark" style="color:var(--danger)"></i> ${userMessage}`;
+        resetSosButton();
+        isSendingSOS = false;
+    }
+
+    function resetSosButton() {
+        sosBtn.disabled = false;
+        if (sosText) {
+            sosText.textContent = originalText;
+            sosText.style.fontSize = originalFontSize;
+        }
+    }
+
+    // Start location capture flow
+    acquirePosition();
+}
+
+// ── Live Location Tracking ────────────────────────────────────────────────────
+
+function startLiveTracking(alertId) {
+    stopLiveTracking(); // clear any previous watch
+
+    // Continuously watch device position
+    watchId = navigator.geolocation.watchPosition(
+        (pos) => { lastPosition = pos; },
+        (err) => console.warn('watchPosition error:', err.message),
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+
+    // Push location to server every LOCATION_UPDATE_INTERVAL ms
+    locationTimer = setInterval(async () => {
+        if (!lastPosition || !activeAlertId) return;
+
+        const { latitude, longitude } = lastPosition.coords;
+        try {
+            await apiCall(`/alerts/${activeAlertId}/location`, 'PUT', { latitude, longitude });
+            updateLocationStatusDot(latitude, longitude);
+        } catch (err) {
+            // Non-fatal – alert may have been resolved on server
+            if (err.message.includes('400') || err.message.includes('404')) {
+                stopLiveTracking();
+            }
+            console.warn('Location update failed:', err.message);
+        }
+    }, LOCATION_UPDATE_INTERVAL);
+}
+
+function stopLiveTracking() {
+    if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
+    if (locationTimer !== null) {
+        clearInterval(locationTimer);
+        locationTimer = null;
+    }
+    activeAlertId = null;
+}
+
+function updateLocationStatusDot(lat, lng) {
+    const statusText = document.getElementById('locationStatus');
+    if (!statusText) return;
+    const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+    statusText.innerHTML =
+        `<i class="fa-solid fa-location-crosshairs" style="color:var(--danger)"></i>` +
+        ` <span style="color:var(--danger); font-weight:600;">Live tracking</span>` +
+        ` – <a href="${mapsUrl}" target="_blank" style="font-size:0.8rem; color:var(--text-muted);">` +
+        `${lat.toFixed(5)}, ${lng.toFixed(5)}</a>`;
+}
+
+// ── My Alerts ─────────────────────────────────────────────────────────────────
+
+async function fetchMyAlerts() {
+    try {
+        const alerts = await apiCall('/alerts/my-alerts', 'GET');
+        const list = document.getElementById('alertsList');
+
+        if (alerts.length === 0) {
+            list.innerHTML = '<p class="text-muted" style="text-align:center; padding: 1rem;">No recent alerts.</p>';
+            return;
+        }
+
+        const statusClassMap = {
+            'Pending':    'status-pending',
+            'In Progress':'status-progress',
+            'Resolved':   'status-resolved',
+            'Cancelled':  'status-cancelled',
+            'False Alarm':'status-falsealarm',
+        };
+
+        list.innerHTML = alerts.map(alert => {
+            const isActive = alert.status === 'Pending' || alert.status === 'In Progress';
+
+            // Show live-location link if we have a recent position
+            const locLat = alert.last_latitude  ?? alert.latitude;
+            const locLng = alert.last_longitude ?? alert.longitude;
+            const gmapsLink = `https://www.google.com/maps?q=${locLat},${locLng}`;
+            const liveTag   = isActive
+                ? `<span class="live-badge"><i class="fa-solid fa-circle-dot"></i> LIVE</span>`
+                : '';
+
+            return `
+            <div style="padding:15px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <div style="flex:1;">
+                    <strong style="font-size:1.1rem; color:var(--secondary);">${alert.emergency_type}</strong>
+                    ${liveTag}
+                    <div style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">
+                        ${new Date(alert.created_at).toLocaleString()}
+                    </div>
+                    <div style="margin-top:6px;">
+                        <a href="${gmapsLink}" target="_blank" class="btn btn-outline btn-small" style="font-size:0.8rem;">
+                            <i class="fa-solid fa-map-location-dot"></i> ${isActive ? 'Live Map' : 'View Map'}
+                        </a>
+                    </div>
+                </div>
+                <div style="text-align:right;">
+                    <span class="status-badge ${statusClassMap[alert.status] || 'status-pending'}">${alert.status}</span>
+                    ${alert.status === 'Pending' ? `
+                    <div style="margin-top:8px;">
+                        <button onclick="cancelUserAlert(${alert.id})" class="btn btn-outline btn-small"
+                            style="font-size:0.75rem; color:var(--text-muted); border-color:#ccc;">
+                            Cancel Alert
+                        </button>
+                    </div>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+
+        // If the active alert has moved to a terminal state, stop tracking
+        if (activeAlertId) {
+            const activeAlert = alerts.find(a => a.id === activeAlertId);
+            if (activeAlert && !['Pending', 'In Progress'].includes(activeAlert.status)) {
+                stopLiveTracking();
+                const statusText = document.getElementById('locationStatus');
+                if (statusText) {
+                    statusText.innerHTML =
+                        '<i class="fa-solid fa-check" style="color:var(--success)"></i> Alert resolved – tracking stopped';
+                }
+                document.getElementById('sosBtn').disabled = false;
+            }
+        }
+    } catch (err) {
+        console.error('Failed to fetch alerts', err);
+    }
+}
+
+// ── Cancel Alert ──────────────────────────────────────────────────────────────
+
+async function cancelUserAlert(alertId) {
+    if (!confirm('Are you sure you want to cancel this emergency alert?')) return;
+
+    toggleLoader(true, 'Cancelling alert…');
+    try {
+        await apiCall(`/alerts/cancel/${alertId}`, 'PUT');
+        toggleLoader(false);
+        showToast('Alert Cancelled Successfully', 'success');
+
+        if (activeAlertId === alertId) {
+            stopLiveTracking();
+            document.getElementById('locationStatus').innerHTML =
+                '<i class="fa-solid fa-location-dot"></i> Ready to capture location';
+            document.getElementById('sosBtn').disabled = false;
+        }
+
+        fetchMyAlerts();
+    } catch (err) {
+        toggleLoader(false);
+        showToast(err.message, 'error');
+    }
+}

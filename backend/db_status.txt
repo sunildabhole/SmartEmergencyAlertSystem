@@ -1,0 +1,1 @@
+User count in DB: 0
