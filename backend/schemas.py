@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from models import AlertStatus
@@ -28,8 +28,7 @@ class UserResponse(UserBase):
     is_verified: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── OTP Schemas ───────────────────────────────────────────────────────────────
@@ -114,17 +113,22 @@ class AlertResponse(AlertBase):
     last_location_update: Optional[datetime] = None
     last_accuracy: Optional[float] = None
     is_moving: Optional[bool] = False
+    # NEW: human-readable address fields
+    full_address: Optional[str] = None
+    landmark: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AlertWithUserResponse(AlertResponse):
     user: UserResponse
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Token Schemas ─────────────────────────────────────────────────────────────

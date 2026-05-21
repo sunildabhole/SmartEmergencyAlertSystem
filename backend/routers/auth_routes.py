@@ -160,12 +160,12 @@ def request_otp(payload: schemas.OTPRequest, db: Session = Depends(database.get_
     ).order_by(models.OTPRecord.created_at.desc()).first()
 
     if last_record:
-        from datetime import timezone
         created_at = last_record.created_at
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+        # Remove timezone info for naive local comparison since database created_at uses server local time via func.now()
+        if created_at.tzinfo is not None:
+            created_at = created_at.replace(tzinfo=None)
             
-        now = datetime.now(timezone.utc)
+        now = datetime.now()  # Naive local time
         cooldown = timedelta(seconds=settings.OTP_RESEND_COOLDOWN_SECONDS)
         if now - created_at < cooldown:
             raise HTTPException(

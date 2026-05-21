@@ -59,6 +59,14 @@ class Alert(Base):
     last_accuracy = Column(Float, nullable=True)                   # NEW: accuracy of latest live update in meters
     last_location_update = Column(DateTime(timezone=True), nullable=True)
     is_moving = Column(Boolean, default=False)                     # NEW: whether citizen is currently moving
+    # NEW: human-readable reverse geocoded address fields
+    full_address = Column(Text, nullable=True)
+    landmark = Column(String(255), nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    country = Column(String(100), nullable=True)
+    postal_code = Column(String(20), nullable=True)
+
     status = Column(
         Enum(
             AlertStatus,

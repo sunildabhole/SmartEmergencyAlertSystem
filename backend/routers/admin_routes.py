@@ -15,6 +15,11 @@ def get_all_alerts(
 ):
     try:
         alerts = db.query(models.Alert).order_by(models.Alert.created_at.desc()).all()
+        if alerts:
+            first = alerts[0]
+            print(f"[API RESPONSE /admin/alerts] First alert id={first.id}: city={first.city}, state={first.state}, postal_code={first.postal_code}, landmark={first.landmark}, full_address={first.full_address}")
+        else:
+            print("[API RESPONSE /admin/alerts] No alerts in system")
         return alerts
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch alerts: {str(e)}")
