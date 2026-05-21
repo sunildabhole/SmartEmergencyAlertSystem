@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         adminEmail = config.admin_email;
     } catch (err) {
         console.error('Failed to load system config, using default fallback:', err);
-        adminEmail = 'sunildabhole6@gmail.com'; // Hardcoded fallback
+        adminEmail = 'admin@example.com'; // Hardcoded fallback
     }
 });
 
