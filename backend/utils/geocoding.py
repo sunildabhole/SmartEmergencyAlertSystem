@@ -27,9 +27,11 @@ _FALLBACK = {
 # Nominatim endpoint
 _NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
 
+from config import settings
+
 # Required User-Agent per Nominatim usage policy
 _HEADERS = {
-    "User-Agent": "SmartEmergencyAlertSystem/1.0 (sunildabhole6@gmail.com)",
+    "User-Agent": f"SmartEmergencyAlertSystem/1.0 ({settings.ADMIN_EMAIL})",
     "Accept-Language": "en",
     "Accept": "application/json",
     "Referer": "https://seas-app.local",

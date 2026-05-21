@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""
     SMTP_PASSWORD: str = ""
-    ADMIN_EMAIL: str = "sunildabhole6@gmail.com"
+    ADMIN_EMAIL: str = "admin@example.com"
     OTP_EXPIRE_MINUTES: int = 5
     OTP_RESEND_COOLDOWN_SECONDS: int = 60
 
