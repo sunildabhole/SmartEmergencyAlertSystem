@@ -127,9 +127,9 @@ async function sendSOS() {
                     activeAlertId = alert.id;
                     toggleLoader(false);
                     showToast('EMERGENCY ALERT SENT SUCCESSFULLY!', 'success');
-                    statusText.innerHTML =
-                        '<i class="fa-solid fa-location-crosshairs" style="color:var(--danger)"></i>' +
-                        ' <span style="color:var(--danger); font-weight:600;">Live tracking active</span>';
+
+                    // Show clean location immediately using alert response
+                    updateLocationStatusDot(latitude, longitude, accuracy, alert);
 
                     // Begin live-location streaming
                     startLiveTracking(alert.id);
@@ -225,12 +225,12 @@ function startLiveTracking(alertId) {
         const { latitude, longitude, accuracy } = lastPosition.coords;
         try {
             // Using the professional PATCH /alerts/location/{id} endpoint
-            await apiCall(`/alerts/location/${activeAlertId}`, 'PATCH', { 
+            const alert = await apiCall(`/alerts/location/${activeAlertId}`, 'PATCH', { 
                 latitude, 
                 longitude,
                 accuracy: accuracy || null 
             });
-            updateLocationStatusDot(latitude, longitude, accuracy);
+            updateLocationStatusDot(latitude, longitude, accuracy, alert);
         } catch (err) {
             // Non-fatal – alert may have been resolved on server
             if (err.message.includes('400') || err.message.includes('404')) {
@@ -253,16 +253,43 @@ function stopLiveTracking() {
     activeAlertId = null;
 }
 
-function updateLocationStatusDot(lat, lng, accuracy) {
+function updateLocationStatusDot(lat, lng, accuracy, alert = null) {
     const statusText = document.getElementById('locationStatus');
     if (!statusText) return;
-    const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-    const accuracyStr = accuracy ? ` (±${Math.round(accuracy)}m)` : '';
-    statusText.innerHTML =
-        `<i class="fa-solid fa-location-crosshairs" style="color:var(--danger)"></i>` +
-        ` <span style="color:var(--danger); font-weight:600;">Live tracking</span>` +
-        ` – <a href="${mapsUrl}" target="_blank" style="font-size:0.8rem; color:var(--text-muted);">` +
-        `${lat.toFixed(5)}, ${lng.toFixed(5)}</a>${accuracyStr}`;
+
+    const hasAddress = alert && (
+        alert.city || 
+        alert.landmark || 
+        (alert.full_address && alert.full_address !== 'Address unavailable' && alert.full_address !== 'Address Pending / Fallback:')
+    );
+
+    if (hasAddress) {
+        const displayLandmark = alert.landmark || alert.city || "";
+        const displayCity = alert.city || "";
+        let cleanName = displayLandmark;
+        if (displayCity && displayLandmark.toLowerCase() !== displayCity.toLowerCase()) {
+            cleanName = `${displayLandmark}, ${displayCity}`;
+        } else if (displayCity) {
+            cleanName = displayCity;
+        }
+
+        if (!cleanName && alert.full_address) {
+            cleanName = alert.full_address.split(',')[0].trim();
+        }
+
+        statusText.innerHTML = `
+            <div style="font-weight: 700; color: var(--secondary); font-size: 1.1rem; margin-top: 4px;">📍 Live Location Active</div>
+            <div style="font-weight: 600; color: var(--text-main); font-size: 0.95rem; margin-top: 2px;">${cleanName}</div>
+            <div style="font-size: 0.8rem; color: var(--success); font-weight: 700; margin-top: 4px;">
+                <i class="fa-solid fa-circle-check"></i> ✓ Location verified
+            </div>
+        `;
+    } else {
+        statusText.innerHTML = `
+            <div style="font-weight: 700; color: var(--danger); font-size: 1.1rem; margin-top: 4px;">📍 Live Location Captured</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 2px; font-style: italic;">Finding nearby area...</div>
+        `;
+    }
 }
 
 // ── My Alerts ─────────────────────────────────────────────────────────────────
@@ -278,13 +305,13 @@ async function fetchMyAlerts() {
             if (!activeAlertId) {
                 activeAlertId = activeAlert.id;
                 startLiveTracking(activeAlert.id);
-                const statusText = document.getElementById('locationStatus');
-                if (statusText) {
-                    const lat = activeAlert.last_latitude ?? activeAlert.latitude;
-                    const lng = activeAlert.last_longitude ?? activeAlert.longitude;
-                    const accuracy = activeAlert.last_accuracy ?? activeAlert.accuracy;
-                    updateLocationStatusDot(lat, lng, accuracy);
-                }
+            }
+            const statusText = document.getElementById('locationStatus');
+            if (statusText) {
+                const lat = activeAlert.last_latitude ?? activeAlert.latitude;
+                const lng = activeAlert.last_longitude ?? activeAlert.longitude;
+                const accuracy = activeAlert.last_accuracy ?? activeAlert.accuracy;
+                updateLocationStatusDot(lat, lng, accuracy, activeAlert);
             }
             // Ensure the SOS button is disabled because there is already an active alert
             document.getElementById('sosBtn').disabled = true;

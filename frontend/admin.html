@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - SEAS</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=1.0.1">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -21,16 +21,31 @@
     <main class="admin-content">
         <div class="stats-container">
             <div class="stat-card pending-stat">
-                <h3>Pending</h3>
-                <h2 id="statPending">0</h2>
+                <div class="stat-info">
+                    <h3>Pending</h3>
+                    <h2 id="statPending">0</h2>
+                </div>
+                <div class="stat-icon-wrapper">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
             </div>
             <div class="stat-card progress-stat">
-                <h3>In Progress</h3>
-                <h2 id="statProgress">0</h2>
+                <div class="stat-info">
+                    <h3>In Progress</h3>
+                    <h2 id="statProgress">0</h2>
+                </div>
+                <div class="stat-icon-wrapper">
+                    <i class="fa-solid fa-circle-notch fa-spin"></i>
+                </div>
             </div>
             <div class="stat-card resolved-stat">
-                <h3>Resolved</h3>
-                <h2 id="statResolved">0</h2>
+                <div class="stat-info">
+                    <h3>Resolved</h3>
+                    <h2 id="statResolved">0</h2>
+                </div>
+                <div class="stat-icon-wrapper">
+                    <i class="fa-solid fa-circle-check"></i>
+                </div>
             </div>
         </div>
 
@@ -46,11 +61,10 @@
                         <tr>
                             <th>ID</th>
                             <th>Time</th>
-                            <th>User Info</th>
+                            <th>Citizen Details</th>
                             <th>Emergency Type</th>
                             <th>Location</th>
-                            <th>Status</th>
-                            <th>Action</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="adminAlertsList">
@@ -61,8 +75,8 @@
         </div>
     </main>
 
-    <script src="js/utils.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/admin.js"></script>
+    <script src="js/utils.js?v=1.0.1"></script>
+    <script src="js/api.js?v=1.0.1"></script>
+    <script src="js/admin.js?v=1.0.1"></script>
 </body>
 </html>

@@ -105,6 +105,18 @@ function sendBrowserNotification(alert) {
     }
 }
 
+// ── Emergency Icon Mapper ─────────────────────────────────────────────────────
+
+function getEmergencyIcon(type) {
+    const t = type ? type.toLowerCase() : '';
+    if (t.includes('medical') || t.includes('health') || t.includes('heart') || t.includes('doctor')) return '🏥';
+    if (t.includes('fire') || t.includes('smoke') || t.includes('burn')) return '🔥';
+    if (t.includes('police') || t.includes('security') || t.includes('theft') || t.includes('robbery') || t.includes('crime') || t.includes('cop')) return '🚔';
+    if (t.includes('accident') || t.includes('crash') || t.includes('road') || t.includes('vehicle')) return '🚗';
+    if (t.includes('disaster') || t.includes('flood') || t.includes('earthquake') || t.includes('storm') || t.includes('tornado') || t.includes('wind') || t.includes('landslide')) return '🌪️';
+    return '🚨';
+}
+
 // ── Fetch & render ────────────────────────────────────────────────────────────
 
 async function fetchAdminAlerts() {
@@ -127,7 +139,7 @@ async function fetchAdminAlerts() {
             // Count stats
             if (alert.status === 'Pending')        pending++;
             else if (alert.status === 'In Progress') progress++;
-            else                                     resolved++;
+            else if (alert.status === 'Resolved')    resolved++;
 
             // Detect new pending alerts
             if (!knownAlertIds.has(alert.id) && alert.status === 'Pending') {
@@ -140,93 +152,116 @@ async function fetchAdminAlerts() {
             const lng = alert.last_longitude ?? alert.longitude;
             const gmapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
 
-            const isLive = (alert.status === 'Pending' || alert.status === 'In Progress')
-                           && alert.last_location_update;
+            // Build human-readable location card – no raw coords as primary content
+            const hasAddress = alert.landmark || alert.city || alert.state || alert.postal_code || (
+                alert.full_address
+                && alert.full_address !== 'Address unavailable'
+                && alert.full_address !== 'Address Pending / Fallback:'
+            );
 
-            // GPS Accuracy Badge
-            const rawAccuracy = alert.last_accuracy ?? alert.accuracy;
-            let accuracyBadge = '';
-            if (rawAccuracy !== null && rawAccuracy !== undefined) {
-                const isAccurate = rawAccuracy <= 100;
-                const accColor = isAccurate ? 'var(--success)' : 'var(--warning)';
-                accuracyBadge = `<span style="display:inline-block; padding: 2px 6px; font-size: 0.7rem; border-radius: 4px; background: rgba(0,0,0,0.05); color: ${accColor}; font-weight: 600; margin-top: 4px;">
-                    🎯 Accuracy: ${Math.round(rawAccuracy)}m ${isAccurate ? '' : '(Low GPS)'}
-                </span>`;
-            }
+            let locationHtml = '';
 
-            // Moving Status Badge
-            let movingBadge = '';
-            if (isLive) {
-                const isMoving = alert.is_moving;
-                movingBadge = `<span style="display:inline-block; padding: 2px 6px; font-size: 0.7rem; border-radius: 4px; background: ${isMoving ? 'rgba(40,167,69,0.1)' : 'rgba(108,117,125,0.1)'}; color: ${isMoving ? 'var(--success)' : 'var(--secondary)'}; font-weight: 600; margin-top: 4px; margin-left: 4px;">
-                    ${isMoving ? '🚶 Moving' : '📍 Stationary'}
-                </span>`;
-            }
-
-            // Seconds/Minutes Ago Calculation
-            let timeAgoText = '';
-            if (isLive && alert.last_location_update) {
-                const updateTime = new Date(alert.last_location_update);
-                const diffMs = new Date() - updateTime;
-                const diffSec = Math.max(0, Math.floor(diffMs / 1000));
-                
-                if (diffSec < 5) {
-                    timeAgoText = 'Just now';
-                } else if (diffSec < 60) {
-                    timeAgoText = `${diffSec}s ago`;
-                } else {
-                    timeAgoText = `${Math.floor(diffSec / 60)}m ago`;
+            if (hasAddress) {
+                // Primary line: landmark || city, city
+                const primaryLoc = alert.landmark || alert.city || '';
+                const secondaryLoc = alert.city || '';
+                let areaCity = primaryLoc;
+                if (secondaryLoc && primaryLoc.toLowerCase() !== secondaryLoc.toLowerCase()) {
+                    areaCity = `${primaryLoc}, ${secondaryLoc}`;
                 }
-            }
 
-            const locationCell = `
-                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                    <a href="${gmapsLink}" target="_blank" class="btn btn-outline btn-small">
-                        <i class="fa-solid fa-map-location-dot"></i> Map
-                    </a>
-                    <button onclick="navigateToCitizen(${lat}, ${lng})" class="btn btn-primary btn-small" style="padding: 0.35rem 0.6rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;">
-                        <i class="fa-solid fa-diamond-turn-right"></i> Navigate
-                    </button>
-                </div>
-                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height: 1.4;">
-                    <strong>Coords:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}
-                    ${isLive && alert.last_location_update
-                        ? `<br><span style="color: var(--danger); font-weight: 600;"><i class="fa-solid fa-circle-dot fa-fade"></i> Live tracking</span> (${timeAgoText})`
-                        : ''}
-                    ${accuracyBadge ? '<br>' + accuracyBadge : ''}
-                    ${movingBadge ? '<br>' + movingBadge : ''}
-                </div>`;
+                // Near landmark (if available and distinct from city)
+                const nearLandmark = alert.landmark && alert.city && alert.landmark.toLowerCase() !== alert.city.toLowerCase()
+                    ? `<div class="loc-landmark">Near ${alert.landmark}</div>`
+                    : (alert.landmark ? `<div class="loc-landmark">Near ${alert.landmark}</div>` : '');
+
+                // State • Postal Code
+                const stateZipParts = [];
+                if (alert.state) stateZipParts.push(alert.state);
+                if (alert.postal_code) stateZipParts.push(alert.postal_code);
+                const stateZip = stateZipParts.join(' • ');
+
+                locationHtml = `
+                    <div class="location-card">
+                        <div class="loc-address">📍 ${areaCity}</div>
+                        ${nearLandmark}
+                        ${stateZip ? `<div class="loc-zip">${stateZip}</div>` : ''}
+                        <details class="gps-details">
+                            <summary>Advanced GPS Details</summary>
+                            <span>${lat.toFixed(6)}, ${lng.toFixed(6)}</span>
+                        </details>
+                    </div>
+                `;
+            } else {
+                locationHtml = `
+                    <div class="location-card">
+                        <div class="loc-address">📍 Location Available</div>
+                        <div class="loc-landmark" style="font-style:italic;">Finding nearby address...</div>
+                        <details class="gps-details">
+                            <summary>Advanced GPS Details</summary>
+                            <span>${lat.toFixed(6)}, ${lng.toFixed(6)}</span>
+                        </details>
+                    </div>
+                `;
+            }
 
             const statusClass = statusClassMap[alert.status] || 'status-pending';
+
+            // Unified Actions Cell
+            const actionsCell = `
+                <td>
+                    <div class="actions-wrapper">
+                        <div class="btn-group">
+                            <a href="${gmapsLink}" target="_blank" class="btn btn-outline btn-xsmall">
+                                <i class="fa-solid fa-map-location-dot"></i> View Map
+                            </a>
+                            <button onclick="navigateToCitizen(${lat}, ${lng}, '${encodeURIComponent(alert.city || '')}', '${encodeURIComponent(alert.state || '')}')" class="btn btn-primary btn-xsmall">
+                                <i class="fa-solid fa-location-arrow"></i> Navigate
+                            </button>
+                        </div>
+                        <div class="status-meta">
+                            <span class="status-badge ${statusClass}" id="status-badge-${alert.id}">
+                                ${alert.status}
+                            </span>
+                            <select onchange="updateAlertStatus(${alert.id}, this.value)"
+                                    class="select-xsmall"
+                                    id="status-select-${alert.id}">
+                                ${['Pending','In Progress','Resolved','Cancelled','False Alarm'].map(s =>
+                                    `<option value="${s}" ${alert.status === s ? 'selected' : ''}>${s}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                    </div>
+                </td>
+            `;
 
             return `
                 <tr>
                     <td>#${alert.id}</td>
                     <td>${new Date(alert.created_at).toLocaleTimeString()}</td>
                     <td>
-                        <strong>${alert.user?.name ?? '—'}</strong><br>
-                        <small style="color:var(--text-muted)">${alert.user?.email ?? '—'}</small>
+                        <span class="citizen-name">${alert.user?.name ?? '—'}</span>
+                        <span class="citizen-email">${alert.user?.email ?? '—'}</span>
                     </td>
-                    <td><strong style="color:var(--danger)">${alert.emergency_type}</strong></td>
-                    <td>${locationCell}</td>
                     <td>
-                        <span class="status-badge ${statusClass}" id="status-badge-${alert.id}">
-                            ${alert.status}
+                        <span class="emergency-badge">
+                            ${getEmergencyIcon(alert.emergency_type)} ${alert.emergency_type}
                         </span>
                     </td>
-                    <td>
-                        <select onchange="updateAlertStatus(${alert.id}, this.value)"
-                                class="modern-select"
-                                style="padding:0.4rem; font-size:0.85rem; width:auto;">
-                            ${['Pending','In Progress','Resolved','Cancelled','False Alarm'].map(s =>
-                                `<option value="${s}" ${alert.status === s ? 'selected' : ''}>${s}</option>`
-                            ).join('')}
-                        </select>
-                    </td>
+                    <td>${locationHtml}</td>
+                    ${actionsCell}
                 </tr>`;
         });
 
+        // Track active focus to avoid layout jumps or interruptions during background polling
+        const activeElementId = document.activeElement ? document.activeElement.id : null;
+        
         list.innerHTML = rows.join('');
+        
+        if (activeElementId) {
+            const el = document.getElementById(activeElementId);
+            if (el) el.focus();
+        }
 
         document.getElementById('statPending').innerText  = pending;
         document.getElementById('statProgress').innerText = progress;
@@ -279,24 +314,30 @@ async function updateAlertStatus(alertId, newStatus) {
 
 // ── Navigate to Citizen (Google Maps Driving Route) ───────────────────────────
 
-function navigateToCitizen(lat, lng) {
+function navigateToCitizen(lat, lng, city = '', state = '') {
+    const decodedCity = city ? decodeURIComponent(city) : '';
+    const decodedState = state ? decodeURIComponent(state) : '';
+    const destSuffix = (decodedCity || decodedState) ? ` (${[decodedCity, decodedState].filter(Boolean).join(', ')})` : '';
+    const destinationQuery = `${lat},${lng}${destSuffix}`;
+    const encodedDestination = encodeURIComponent(destinationQuery);
+    
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const originLat = position.coords.latitude;
                 const originLng = position.coords.longitude;
-                const url = `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${lat},${lng}&travelmode=driving`;
+                const url = `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${encodedDestination}&travelmode=driving`;
                 window.open(url, '_blank');
             },
             (error) => {
                 console.warn("Could not retrieve responder GPS coordinates for navigation, using destination fallback:", error);
-                const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${encodedDestination}&travelmode=driving`;
                 window.open(url, '_blank');
             },
             { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
         );
     } else {
-        const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+        const url = `https://www.google.com/maps/dir/?api=1&destination=${encodedDestination}&travelmode=driving`;
         window.open(url, '_blank');
     }
 }
