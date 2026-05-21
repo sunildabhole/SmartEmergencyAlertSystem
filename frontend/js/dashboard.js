@@ -78,13 +78,14 @@ async function sendSOS() {
     // Disable button and adapt styles
     const sosBtn = document.getElementById('sosBtn');
     sosBtn.disabled = true;
+    sosBtn.classList.add('sos-active');
 
     const sosText = sosBtn.querySelector('.sos-text');
-    const originalText = sosText ? sosText.textContent : 'SOS';
-    const originalFontSize = sosText ? sosText.style.fontSize : '';
+    const originalText = 'SOS';
+    const originalFontSize = '';
 
     if (sosText) {
-        sosText.textContent = "Getting Location...";
+        sosText.textContent = "📡 CAPTURING";
         sosText.style.fontSize = "1.1rem"; // scale down to fit inside the circular button beautifully
     }
 
@@ -115,6 +116,10 @@ async function sendSOS() {
 
                 toggleLoader(true, 'Sending SOS Alert…');
                 statusText.innerHTML = '<i class="fa-solid fa-satellite-dish"></i> Transmitting signal…';
+                if (sosText) {
+                    sosText.textContent = "🚨 TRANSMITTING";
+                    sosText.style.fontSize = "1.0rem";
+                }
 
                 try {
                     const alert = await apiCall('/alerts/', 'POST', {
@@ -264,17 +269,35 @@ function updateLocationStatusDot(lat, lng, accuracy, alert = null) {
     );
 
     if (hasAddress) {
-        const displayLandmark = alert.landmark || alert.city || "";
-        const displayCity = alert.city || "";
-        let cleanName = displayLandmark;
-        if (displayCity && displayLandmark.toLowerCase() !== displayCity.toLowerCase()) {
-            cleanName = `${displayLandmark}, ${displayCity}`;
-        } else if (displayCity) {
-            cleanName = displayCity;
+        let cleanName = '';
+        const landmark = alert.landmark ? alert.landmark.trim() : '';
+        const city = alert.city ? alert.city.trim() : '';
+        const state = alert.state ? alert.state.trim() : '';
+
+        if (landmark && city) {
+            if (landmark.toLowerCase() !== city.toLowerCase()) {
+                cleanName = `${landmark}, ${city}`;
+            } else {
+                cleanName = landmark;
+            }
+        } else if (landmark) {
+            cleanName = landmark;
+        } else if (city) {
+            cleanName = city;
+        }
+
+        if (state) {
+            if (cleanName) {
+                if (!cleanName.toLowerCase().includes(state.toLowerCase())) {
+                    cleanName = `${cleanName}, ${state}`;
+                }
+            } else {
+                cleanName = state;
+            }
         }
 
         if (!cleanName && alert.full_address) {
-            cleanName = alert.full_address.split(',')[0].trim();
+            cleanName = alert.full_address.split(',').slice(0, 2).join(', ').trim();
         }
 
         statusText.innerHTML = `
@@ -284,10 +307,18 @@ function updateLocationStatusDot(lat, lng, accuracy, alert = null) {
                 <i class="fa-solid fa-circle-check"></i> ✓ Location verified
             </div>
         `;
+    } else if (alert) {
+        statusText.innerHTML = `
+            <div style="font-weight: 700; color: var(--secondary); font-size: 1.1rem; margin-top: 4px;">📍 Live Location Active</div>
+            <div style="font-weight: 600; color: var(--text-muted); font-size: 0.9rem; margin-top: 2px;">GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
+            <div style="font-size: 0.8rem; color: var(--success); font-weight: 700; margin-top: 4px;">
+                <i class="fa-solid fa-circle-check"></i> ✓ GPS Signal verified
+            </div>
+        `;
     } else {
         statusText.innerHTML = `
             <div style="font-weight: 700; color: var(--danger); font-size: 1.1rem; margin-top: 4px;">📍 Live Location Captured</div>
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 2px; font-style: italic;">Finding nearby area...</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 2px; font-style: italic;">Acquiring signal...</div>
         `;
     }
 }
@@ -314,7 +345,14 @@ async function fetchMyAlerts() {
                 updateLocationStatusDot(lat, lng, accuracy, activeAlert);
             }
             // Ensure the SOS button is disabled because there is already an active alert
-            document.getElementById('sosBtn').disabled = true;
+            const sosBtn = document.getElementById('sosBtn');
+            sosBtn.disabled = true;
+            sosBtn.classList.add('sos-active');
+            const sosText = sosBtn.querySelector('.sos-text');
+            if (sosText) {
+                sosText.textContent = "🛰 ACTIVE";
+                sosText.style.fontSize = "1.2rem";
+            }
         } else {
             // No active alert found, ensure button is active and activeAlertId is cleared
             if (activeAlertId) {
@@ -324,7 +362,14 @@ async function fetchMyAlerts() {
                     statusText.innerHTML = '<i class="fa-solid fa-location-dot"></i> Ready to capture location';
                 }
             }
-            document.getElementById('sosBtn').disabled = false;
+            const sosBtn = document.getElementById('sosBtn');
+            sosBtn.disabled = false;
+            sosBtn.classList.remove('sos-active');
+            const sosText = sosBtn.querySelector('.sos-text');
+            if (sosText) {
+                sosText.textContent = "SOS";
+                sosText.style.fontSize = "";
+            }
         }
 
         if (alerts.length === 0) {
@@ -388,7 +433,14 @@ async function fetchMyAlerts() {
                     statusText.innerHTML =
                         '<i class="fa-solid fa-check" style="color:var(--success)"></i> Alert resolved – tracking stopped';
                 }
-                document.getElementById('sosBtn').disabled = false;
+                const sosBtn = document.getElementById('sosBtn');
+                sosBtn.disabled = false;
+                sosBtn.classList.remove('sos-active');
+                const sosText = sosBtn.querySelector('.sos-text');
+                if (sosText) {
+                    sosText.textContent = "SOS";
+                    sosText.style.fontSize = "";
+                }
             }
         }
     } catch (err) {
@@ -411,7 +463,14 @@ async function cancelUserAlert(alertId) {
             stopLiveTracking();
             document.getElementById('locationStatus').innerHTML =
                 '<i class="fa-solid fa-location-dot"></i> Ready to capture location';
-            document.getElementById('sosBtn').disabled = false;
+            const sosBtn = document.getElementById('sosBtn');
+            sosBtn.disabled = false;
+            sosBtn.classList.remove('sos-active');
+            const sosText = sosBtn.querySelector('.sos-text');
+            if (sosText) {
+                sosText.textContent = "SOS";
+                sosText.style.fontSize = "";
+            }
         }
 
         fetchMyAlerts();

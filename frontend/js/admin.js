@@ -162,30 +162,43 @@ async function fetchAdminAlerts() {
             let locationHtml = '';
 
             if (hasAddress) {
-                // Primary line: landmark || city, city
-                const primaryLoc = alert.landmark || alert.city || '';
-                const secondaryLoc = alert.city || '';
-                let areaCity = primaryLoc;
-                if (secondaryLoc && primaryLoc.toLowerCase() !== secondaryLoc.toLowerCase()) {
-                    areaCity = `${primaryLoc}, ${secondaryLoc}`;
+                const landmark = alert.landmark ? alert.landmark.trim() : '';
+                const city = alert.city ? alert.city.trim() : '';
+                const state = alert.state ? alert.state.trim() : '';
+                const zip = alert.postal_code ? alert.postal_code.trim() : '';
+
+                let mainAddress = '';
+                let landmarkLine = '';
+
+                if (landmark && city) {
+                    if (landmark.toLowerCase() !== city.toLowerCase()) {
+                        mainAddress = `${landmark}, ${city}`;
+                    } else {
+                        mainAddress = city;
+                    }
+                } else if (city) {
+                    mainAddress = city;
+                } else if (landmark) {
+                    mainAddress = landmark;
+                } else {
+                    mainAddress = alert.full_address.split(',')[0].trim();
                 }
 
-                // Near landmark (if available and distinct from city)
-                const nearLandmark = alert.landmark && alert.city && alert.landmark.toLowerCase() !== alert.city.toLowerCase()
-                    ? `<div class="loc-landmark">Near ${alert.landmark}</div>`
-                    : (alert.landmark ? `<div class="loc-landmark">Near ${alert.landmark}</div>` : '');
+                if (state) {
+                    if (!mainAddress.toLowerCase().includes(state.toLowerCase())) {
+                        mainAddress = `${mainAddress}, ${state}`;
+                    }
+                }
 
-                // State • Postal Code
-                const stateZipParts = [];
-                if (alert.state) stateZipParts.push(alert.state);
-                if (alert.postal_code) stateZipParts.push(alert.postal_code);
-                const stateZip = stateZipParts.join(' • ');
+                if (landmark && landmark.toLowerCase() !== city.toLowerCase()) {
+                    landmarkLine = `<div class="loc-landmark">Near ${landmark}</div>`;
+                }
 
                 locationHtml = `
                     <div class="location-card">
-                        <div class="loc-address">📍 ${areaCity}</div>
-                        ${nearLandmark}
-                        ${stateZip ? `<div class="loc-zip">${stateZip}</div>` : ''}
+                        <div class="loc-address">📍 ${mainAddress}</div>
+                        ${landmarkLine}
+                        ${zip ? `<div class="loc-zip">${zip}</div>` : ''}
                         <details class="gps-details">
                             <summary>Advanced GPS Details</summary>
                             <span>${lat.toFixed(6)}, ${lng.toFixed(6)}</span>
@@ -195,12 +208,13 @@ async function fetchAdminAlerts() {
             } else {
                 locationHtml = `
                     <div class="location-card">
-                        <div class="loc-address">📍 Location Available</div>
-                        <div class="loc-landmark" style="font-style:italic;">Finding nearby address...</div>
-                        <details class="gps-details">
-                            <summary>Advanced GPS Details</summary>
-                            <span>${lat.toFixed(6)}, ${lng.toFixed(6)}</span>
-                        </details>
+                        <div class="loc-address" style="color: var(--text-muted); font-weight: 600;">📍 GPS Coordinates Only</div>
+                        <div class="loc-landmark" style="font-weight: 700; color: var(--text-main); font-size: 0.95rem; margin-top: 2px;">
+                            ${lat.toFixed(6)}, ${lng.toFixed(6)}
+                        </div>
+                        <div class="loc-zip" style="font-size: 0.75rem; color: var(--danger); font-weight: 600; margin-top: 4px;">
+                            No address details recorded
+                        </div>
                     </div>
                 `;
             }
