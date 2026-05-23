@@ -138,21 +138,27 @@ def process_location_update(
             detail="Location updates only accepted for Pending or In-Progress alerts",
         )
 
+    print(f"[GPS LIVE] Received live location update for alert #{alert_id}: lat={location.latitude}, lng={location.longitude}, accuracy={location.accuracy}")
+
     try:
         # Determine if moving (e.g. coordinates shifted by > 5 meters)
         # And determine if we need to update geocoding address (shifted by > 30 meters or address is currently missing)
         is_moving = False
         should_geocode = False
+        distance_moved = 0.0
 
-        if alert.last_latitude is not None and alert.last_longitude is not None:
+        if alert.latitude is not None and alert.longitude is not None:
             distance_moved = haversine_distance(
-                alert.last_latitude, alert.last_longitude,
+                alert.latitude, alert.longitude,
                 location.latitude, location.longitude
             )
             
             # Determine if citizen is moving (shifted by > ~5 meters)
             if distance_moved > 5.0:
                 is_moving = True
+                print(f"[MOVEMENT DETECTED] Alert #{alert_id} moved {distance_moved:.2f} meters!")
+            else:
+                print(f"[GPS LIVE] Distance since last update: {distance_moved:.2f} meters (under 5m threshold, no movement logged).")
             
             # Determine if we should trigger Nominatim reverse geocode update (> 30 meters)
             if distance_moved > 30.0:
@@ -175,19 +181,25 @@ def process_location_update(
                 alert.state = geo_info.get("state")
                 alert.country = geo_info.get("country")
                 alert.postal_code = geo_info.get("postal_code")
-                print(f"[DB SAVE] Saving updated location alert #{alert_id}:\nfull_address={alert.full_address}\nlandmark={alert.landmark}\ncity={alert.city}\nstate={alert.state}\npostal_code={alert.postal_code}")
+                print(f"[LOCATION_UPDATE] Reverse geocoding succeeded for alert #{alert_id}")
             except Exception as geo_err:
                 print(f"[LOCATION_UPDATE] Geocoding failed (non-fatal): {geo_err}")
 
+        print(f"[DB SAVE] Saving updated coordinates to DB for alert #{alert_id}: lat={location.latitude}, lng={location.longitude}")
+
+        alert.latitude = location.latitude
+        alert.longitude = location.longitude
+        alert.accuracy = location.accuracy
         alert.last_latitude = location.latitude
         alert.last_longitude = location.longitude
         alert.last_accuracy = location.accuracy
         alert.last_location_update = datetime.now(timezone.utc)
+        alert.updated_at = datetime.now(timezone.utc)
         alert.is_moving = is_moving
         
         db.commit()
         db.refresh(alert)
-        print(f"[DB VERIFY] Updated location:\ncity={alert.city}\nstate={alert.state}\npostal_code={alert.postal_code}\nlandmark={alert.landmark}\nfull_address={alert.full_address}")
+        print(f"[DB VERIFY] Updated location successfully in DB for alert #{alert_id}:\nlat={alert.latitude}\nlng={alert.longitude}\ncity={alert.city}\nstate={alert.state}\npostal_code={alert.postal_code}\nlandmark={alert.landmark}\nfull_address={alert.full_address}")
         return alert
     except Exception as e:
         db.rollback()

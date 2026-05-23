@@ -75,6 +75,7 @@ class Alert(Base):
         default=AlertStatus.PENDING.value
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="alerts")
 

@@ -7,6 +7,18 @@ from routers import auth_routes, alert_routes, admin_routes
 # Create DB tables if they don't exist
 models.Base.metadata.create_all(bind=database.engine)
 
+from sqlalchemy import text
+with database.engine.connect() as conn:
+    try:
+        conn.execute(text("ALTER TABLE alerts ADD COLUMN updated_at DATETIME DEFAULT NULL;"))
+        conn.commit()
+        print("[MIGRATION] Added updated_at column successfully.")
+    except Exception as e:
+        if "Duplicate column" in str(e) or "1060" in str(e):
+            pass
+        else:
+            print(f"[MIGRATION] Error migrating DB: {e}")
+
 
 app = FastAPI(
     title="Smart Emergency Alert System API",

@@ -229,7 +229,7 @@ async function fetchAdminAlerts() {
                             <a href="${gmapsLink}" target="_blank" class="btn btn-outline btn-xsmall">
                                 <i class="fa-solid fa-map-location-dot"></i> View Map
                             </a>
-                            <button onclick="navigateToCitizen(${lat}, ${lng}, '${encodeURIComponent(alert.city || '')}', '${encodeURIComponent(alert.state || '')}')" class="btn btn-primary btn-xsmall">
+                            <button onclick="navigateToCitizen(${lat}, ${lng})" class="btn btn-primary btn-xsmall">
                                 <i class="fa-solid fa-location-arrow"></i> Navigate
                             </button>
                         </div>
@@ -328,11 +328,8 @@ async function updateAlertStatus(alertId, newStatus) {
 
 // ── Navigate to Citizen (Google Maps Driving Route) ───────────────────────────
 
-function navigateToCitizen(lat, lng, city = '', state = '') {
-    const decodedCity = city ? decodeURIComponent(city) : '';
-    const decodedState = state ? decodeURIComponent(state) : '';
-    const destSuffix = (decodedCity || decodedState) ? ` (${[decodedCity, decodedState].filter(Boolean).join(', ')})` : '';
-    const destinationQuery = `${lat},${lng}${destSuffix}`;
+function navigateToCitizen(lat, lng) {
+    const destinationQuery = `${lat},${lng}`;
     const encodedDestination = encodeURIComponent(destinationQuery);
     
     if (navigator.geolocation) {
@@ -348,7 +345,7 @@ function navigateToCitizen(lat, lng, city = '', state = '') {
                 const url = `https://www.google.com/maps/dir/?api=1&destination=${encodedDestination}&travelmode=driving`;
                 window.open(url, '_blank');
             },
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
         );
     } else {
         const url = `https://www.google.com/maps/dir/?api=1&destination=${encodedDestination}&travelmode=driving`;

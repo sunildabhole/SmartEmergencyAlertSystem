@@ -10,6 +10,7 @@ alter_statements = [
     "ALTER TABLE alerts ADD COLUMN last_latitude DOUBLE DEFAULT NULL;",
     "ALTER TABLE alerts ADD COLUMN last_longitude DOUBLE DEFAULT NULL;",
     "ALTER TABLE alerts ADD COLUMN last_location_update DATETIME DEFAULT NULL;",
+    "ALTER TABLE alerts ADD COLUMN updated_at DATETIME DEFAULT NULL;",
     "ALTER TABLE alerts ADD COLUMN accuracy DOUBLE DEFAULT NULL;",
     "ALTER TABLE alerts ADD COLUMN last_accuracy DOUBLE DEFAULT NULL;",
     "ALTER TABLE alerts ADD COLUMN is_moving BOOLEAN DEFAULT FALSE;",

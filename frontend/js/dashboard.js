@@ -9,23 +9,96 @@
  * the alert status changes to Resolved / Cancelled / False Alarm.
  */
 
-const LOCATION_UPDATE_INTERVAL = 10_000; // 10 seconds
-
 let activeAlertId  = null;   // currently tracked alert ID
 let watchId        = null;   // navigator.geolocation.watchPosition handle
-let locationTimer  = null;   // setInterval handle for location PUTs
-let lastPosition   = null;   // most recent GeolocationPosition
+let lastSentLat    = null;   // last successfully sent latitude
+let lastSentLng    = null;   // last successfully sent longitude
 let isSendingSOS   = false;  // Protect against duplicate SOS triggers
-
 
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth(false);
     fetchUserInfo();
     fetchMyAlerts();
+    initializeLocationPermission();
 
     document.getElementById('logoutBtn').addEventListener('click', stopTrackingAndLogout);
     document.getElementById('sosBtn').addEventListener('click', sendSOS);
 });
+
+// ── Geolocation Warmup & Permissions ──────────────────────────────────────────
+
+function initializeLocationPermission() {
+    if (!navigator.geolocation) {
+        showToast('Your browser does not support location tracking.', 'error');
+        return;
+    }
+
+    if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+            console.log(`[GPS LIVE] Initial permission state: ${result.state}`);
+            if (result.state === 'denied') {
+                handlePermissionDenied();
+            } else {
+                requestFreshWarmupGPS();
+            }
+
+            result.onchange = () => {
+                console.log(`[GPS LIVE] Permission state changed to: ${result.state}`);
+                if (result.state === 'denied') {
+                    handlePermissionDenied();
+                } else if (result.state === 'granted') {
+                    requestFreshWarmupGPS();
+                }
+            };
+        }).catch(err => {
+            console.warn('[GPS LIVE] Failed to query permissions API:', err);
+            requestFreshWarmupGPS();
+        });
+    } else {
+        requestFreshWarmupGPS();
+    }
+}
+
+function handlePermissionDenied() {
+    const msg = "Please allow live location access.";
+    showToast(msg + " Click the lock/settings icon in your browser URL bar to enable GPS.", 'error');
+    const statusText = document.getElementById('locationStatus');
+    if (statusText) {
+        statusText.innerHTML = `<i class="fa-solid fa-location-xmark" style="color:var(--danger)"></i> ${msg}<br><small style="color:var(--text-muted)">Check your browser location settings to grant access.</small>`;
+    }
+}
+
+function requestFreshWarmupGPS() {
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const { latitude, longitude } = position.coords;
+            console.log(`[GPS LIVE] Warmup successful: ${latitude}, ${longitude}`);
+        },
+        (error) => {
+            if (error.code === error.PERMISSION_DENIED) {
+                handlePermissionDenied();
+            } else {
+                console.warn('[GPS LIVE] Warmup fetch error:', error.message);
+            }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+}
+
+// ── Haversine Distance Helper ────────────────────────────────────────────────
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    if (lat1 === lat2 && lon1 === lon2) return 0;
+    const toRad = x => (x * Math.PI) / 180;
+    const R = 6371000; // Earth's radius in meters
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 
@@ -107,7 +180,6 @@ async function sendSOS() {
                 }
 
                 console.info("Location fetched successfully", { latitude, longitude, accuracy });
-                lastPosition = position;
 
                 // Accuracy Warning (still allows SOS)
                 if (accuracy && accuracy > 100) {
@@ -137,7 +209,7 @@ async function sendSOS() {
                     updateLocationStatusDot(latitude, longitude, accuracy, alert);
 
                     // Begin live-location streaming
-                    startLiveTracking(alert.id);
+                    startLiveTracking(alert.id, latitude, longitude);
                     fetchMyAlerts();
                 } catch (err) {
                     toggleLoader(false);
@@ -164,7 +236,7 @@ async function sendSOS() {
                 // Handle final failure after retry
                 handleFailure(error);
             },
-            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 } // strict WhatsApp high accuracy options
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
     }
 
@@ -173,7 +245,7 @@ async function sendSOS() {
         if (error && error.code) {
             switch (error.code) {
                 case error.PERMISSION_DENIED:
-                    userMessage = "Location access denied. Please allow GPS permission.";
+                    userMessage = "Please allow live location access.";
                     break;
                 case error.POSITION_UNAVAILABLE:
                     userMessage = "Unable to detect location.";
@@ -207,55 +279,78 @@ async function sendSOS() {
 
 // ── Live Location Tracking ────────────────────────────────────────────────────
 
-function startLiveTracking(alertId) {
-    stopLiveTracking(); // clear any previous watch
+function startLiveTracking(alertId, initialLat = null, initialLng = null) {
+    stopLiveTracking(); // clear any previous watch and state
+
+    activeAlertId = alertId;
+    lastSentLat = initialLat;
+    lastSentLng = initialLng;
+
+    console.log(`[GPS LIVE] Starting true real-time tracking for alert #${alertId}. Initial: ${initialLat}, ${initialLng}`);
 
     // Continuously watch device position (WhatsApp style)
     watchId = navigator.geolocation.watchPosition(
-        (pos) => { 
-            // Validate fresh position and log accuracy
-            if (pos.coords.accuracy > 100) {
-                console.warn(`Low GPS accuracy in live tracking: ${pos.coords.accuracy}m`);
+        async (pos) => { 
+            const { latitude, longitude, accuracy } = pos.coords;
+            console.log(`[GPS LIVE] Captured fresh position: ${latitude}, ${longitude} (accuracy: ${accuracy}m)`);
+
+            if (!activeAlertId) return;
+
+            // Check if this is the first update or if we have moved more than 5 meters
+            let shouldUpdate = false;
+            if (lastSentLat === null || lastSentLng === null) {
+                shouldUpdate = true;
+            } else {
+                const distance = haversineDistance(lastSentLat, lastSentLng, latitude, longitude);
+                console.log(`[GPS LIVE] Distance since last update: ${distance.toFixed(2)} meters`);
+                if (distance > 5.0) {
+                    shouldUpdate = true;
+                    console.log(`[MOVEMENT DETECTED] Citizen moved ${distance.toFixed(2)} meters!`);
+                } else {
+                    console.log(`[GPS LIVE] Ignoring tiny GPS drift (${distance.toFixed(2)} meters).`);
+                }
             }
-            lastPosition = pos; 
+
+            if (shouldUpdate) {
+                console.log(`[LOCATION UPDATE] Sending update to backend: ${latitude}, ${longitude}`);
+                try {
+                    // Using the professional PATCH /alerts/location/{id} endpoint
+                    const alert = await apiCall(`/alerts/location/${activeAlertId}`, 'PATCH', { 
+                        latitude, 
+                        longitude,
+                        accuracy: accuracy || null 
+                    });
+                    lastSentLat = latitude;
+                    lastSentLng = longitude;
+                    updateLocationStatusDot(latitude, longitude, accuracy, alert);
+                } catch (err) {
+                    // Non-fatal – alert may have been resolved on server
+                    if (err.message.includes('400') || err.message.includes('404')) {
+                        stopLiveTracking();
+                    }
+                    console.warn('Location update failed:', err.message);
+                }
+            }
         },
-        (err) => console.warn('watchPosition error:', err.message),
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } // high accuracy, no cache
-    );
-
-    // Push location to server every LOCATION_UPDATE_INTERVAL ms
-    locationTimer = setInterval(async () => {
-        if (!lastPosition || !activeAlertId) return;
-
-        const { latitude, longitude, accuracy } = lastPosition.coords;
-        try {
-            // Using the professional PATCH /alerts/location/{id} endpoint
-            const alert = await apiCall(`/alerts/location/${activeAlertId}`, 'PATCH', { 
-                latitude, 
-                longitude,
-                accuracy: accuracy || null 
-            });
-            updateLocationStatusDot(latitude, longitude, accuracy, alert);
-        } catch (err) {
-            // Non-fatal – alert may have been resolved on server
-            if (err.message.includes('400') || err.message.includes('404')) {
-                stopLiveTracking();
+        (err) => {
+            if (err.code === err.PERMISSION_DENIED) {
+                handlePermissionDenied();
             }
-            console.warn('Location update failed:', err.message);
-        }
-    }, LOCATION_UPDATE_INTERVAL);
+            console.warn('watchPosition error:', err.message);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 } // high accuracy, no cache
+    );
 }
 
 function stopLiveTracking() {
     if (watchId !== null) {
+        console.log(`[GPS LIVE] Stopping live tracking. Clearing watcher ID: ${watchId}`);
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
     }
-    if (locationTimer !== null) {
-        clearInterval(locationTimer);
-        locationTimer = null;
-    }
     activeAlertId = null;
+    lastSentLat = null;
+    lastSentLng = null;
 }
 
 function updateLocationStatusDot(lat, lng, accuracy, alert = null) {
