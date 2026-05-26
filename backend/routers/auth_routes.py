@@ -78,7 +78,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
             raise HTTPException(status_code=400, detail="Phone number already registered")
 
     hashed_password = security.get_password_hash(user.password)
-    role = "admin" if user.email.lower() == settings.ADMIN_EMAIL.lower() else "user"
+    role = "user"
 
     new_user = models.User(
         name=user.name,

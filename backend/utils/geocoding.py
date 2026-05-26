@@ -181,24 +181,12 @@ def _do_reverse_geocode(lat: float, lon: float) -> dict:
     return _parse_address(data)
 
 
-def reverse_geocode(lat: float, lon: float) -> dict:
+from functools import lru_cache
+
+def _do_reverse_geocode_with_retry(lat: float, lon: float) -> dict:
     """
-    Perform reverse geocoding with automatic retry on failure.
-
-    - Attempt 1: immediately
-    - If fails → retry once after 2 seconds
-    - If retry fails → return graceful fallback (never crash)
-
-    Returns parsed dictionary of address components.
+    Perform core reverse geocoding lookup with fallback retry logic.
     """
-    if lat is None or lon is None:
-        print("[GEOCODING] ERROR: lat or lon is None")
-        return dict(_FALLBACK)
-
-    if lat == 0.0 or lon == 0.0:
-        print("[GEOCODING] ERROR: lat or lon is zero (invalid)")
-        return dict(_FALLBACK)
-
     # ── Attempt 1 ──
     print(f"[GEOCODING] ═══ Attempt 1 for ({lat}, {lon}) ═══")
     try:
@@ -224,3 +212,40 @@ def reverse_geocode(lat: float, lon: float) -> dict:
 
     print("[GEOCODING] ✗✗ Returning fallback (Address unavailable)")
     return dict(_FALLBACK)
+
+
+@lru_cache(maxsize=512)
+def _reverse_geocode_cached_internal(lat_r: float, lon_r: float) -> str:
+    """
+    Thread-safe, rate-limited, and cached reverse geocoder.
+    Applies a strict 1.1s delay for Nominatim API compliance.
+    Returns JSON serialized string.
+    """
+    print(f"[GEOCODING_CACHE] Cache miss for rounded coordinates ({lat_r}, {lon_r}). Enforcing 1.1s delay...")
+    time.sleep(1.1)
+    
+    result = _do_reverse_geocode_with_retry(lat_r, lon_r)
+    return json.dumps(result)
+
+
+def reverse_geocode(lat: float, lon: float) -> dict:
+    """
+    Perform reverse geocoding with automatic rate limit protection,
+    LRU caching with 4 decimal coordinate rounding (~11m spacing),
+    and retry fallbacks.
+    """
+    if lat is None or lon is None:
+        print("[GEOCODING] ERROR: lat or lon is None")
+        return dict(_FALLBACK)
+
+    if lat == 0.0 or lon == 0.0:
+        print("[GEOCODING] ERROR: lat or lon is zero (invalid)")
+        return dict(_FALLBACK)
+
+    # Round coordinates to 4 decimal places (approx 11m grid resolution)
+    lat_r = round(lat, 4)
+    lon_r = round(lon, 4)
+
+    # Fetch serialized geocode components from thread-safe cache
+    json_res = _reverse_geocode_cached_internal(lat_r, lon_r)
+    return json.loads(json_res)

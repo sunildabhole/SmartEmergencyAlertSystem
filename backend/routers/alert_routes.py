@@ -274,7 +274,7 @@ def cancel_alert(
         if not alert:
             raise HTTPException(status_code=404, detail="Alert not found")
 
-        if alert.status != models.AlertStatus.PENDING.value:
+        if alert.status != models.AlertStatus.PENDING:
             raise HTTPException(status_code=400, detail="Only Pending alerts can be cancelled")
 
         alert.status = models.AlertStatus.CANCELLED

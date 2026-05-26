@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "admin@example.com"
     OTP_EXPIRE_MINUTES: int = 5
     OTP_RESEND_COOLDOWN_SECONDS: int = 60
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:5500,http://127.0.0.1:5500,http://localhost:5501,http://127.0.0.1:5501,http://localhost:3000"
 
     class Config:
         # Resolve the .env file path relative to this script
